@@ -10,9 +10,9 @@ services:
     restart: on-failure
 
   ms_post_processing:
-    build: ./ms_post_processing
+    build: ./ms_post_processing/backend/ms_post_processing
     ports:
       - "8080:8080"
     env_file:
-      - ./ms_post_processing/.env
+      - ./ms_post_processing/backend/ms_post_processing/.env
     restart: on-failure
