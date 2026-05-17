@@ -1,0 +1,18 @@
+services:
+  ms_ai_processing:
+    build: ./ms_ai_processing/backend/ms_ia_processing
+    ports:
+      - "8001:8001"
+    env_file:
+      - ./ms_ai_processing/backend/ms_ia_processing/.env
+#    depends_on:
+      - ms_post_processing
+    restart: on-failure
+
+  ms_post_processing:
+    build: ./ms_post_processing
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./ms_post_processing/.env
+    restart: on-failure
