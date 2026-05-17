@@ -73,25 +73,24 @@ async def scan(
             f"alta: {altas} | media: {medias} | baja: {bajas}"
         )
 
+
         # Reenviar a ms_post_processing con sesion_id y JWT
         logger.info(f"Reenviando resultado a ms_post_processing | sesion_id: {sesion_id}")
 
+        async with httpx.AsyncClient() as client:
+            respuesta_post = await client.post(
+                "http://localhost:8080/api/v1/procesar",
+                json={
+                    **respuesta_gemini.model_dump(),
+                    "sesion_id": sesion_id
+                },
+                headers={"Authorization": f"Bearer {jwt_token}"},
+                timeout=30.0
+            )
+            respuesta_post.raise_for_status()
 
-
-        # async with httpx.AsyncClient() as client:
-        #     respuesta_post = await client.post(
-        #         f"{settings.ms_post_processing_url}/procesar",
-        #         json={
-        #             **respuesta_gemini.model_dump(),
-        #             "sesion_id": sesion_id
-        #         },
-        #         headers={"Authorization": f"Bearer {jwt_token}"},
-        #         timeout=30.0
-        #     )
-        #     respuesta_post.raise_for_status()
-        #
-        # logger.info(f"Respuesta de ms_post_processing recibida | sesion_id: {sesion_id}")
-        # return respuesta_post.json()
+        logger.info(f"Respuesta de ms_post_processing recibida | sesion_id: {sesion_id}")
+        return respuesta_post.json()
 
     except ImagenInvalidaError as e:
         logger.error(f"Imagen inválida | sesion_id: {sesion_id} | detalle: {e.mensaje}")
