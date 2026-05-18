@@ -6,6 +6,10 @@ services:
     env_file:
       - ./ms_ai_processing/backend/ms_ia_processing/.env
     restart: on-failure
+    depends_on:
+      - ms_post_processing
+    networks:
+      - tienda_network
 
   ms_post_processing:
     build: ./ms_post_processing/backend/ms_post_processing
@@ -14,3 +18,9 @@ services:
     env_file:
       - ./ms_post_processing/backend/ms_post_processing/.env
     restart: on-failure
+    networks:
+      - tienda_network
+
+networks:
+  tienda_network:
+    driver: bridge

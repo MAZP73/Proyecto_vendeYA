@@ -79,7 +79,7 @@ async def scan(
 
         async with httpx.AsyncClient() as client:
             respuesta_post = await client.post(
-                "http://localhost:8000/api/v1/procesar",
+                "http://ms_post_processing:8000/api/v1/procesar",
                 json={
                     **respuesta_gemini.model_dump(),
                     "sesion_id": sesion_id
