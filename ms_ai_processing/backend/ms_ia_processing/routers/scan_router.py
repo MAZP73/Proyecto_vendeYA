@@ -1,6 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from schemas.scan_schema import RespuestaGemini
+from schemas.scan_response import ScanResponse
 from services.vision_service import procesar_imagen
 from core.exceptions import (
     ImagenInvalidaError,
@@ -18,7 +19,7 @@ security = HTTPBearer()
 FORMATOS_PERMITIDOS = {"image/jpeg", "image/png", "image/webp"}
 
 
-@router.post("/", response_model=RespuestaGemini)
+@router.post("/", response_model=ScanResponse)
 async def scan(
     file: UploadFile = File(...),
     sesion_id: str = Form(...),

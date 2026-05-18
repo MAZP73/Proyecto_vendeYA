@@ -2,13 +2,13 @@ from pydantic import BaseModel
 from typing import Optional
 
 class ProductoGemini(BaseModel):
-    producto_id: Optional[str]
-    nombre_detectado: Optional[str]
-    nombre_catalogo: Optional[str]
-    cantidad: Optional[int]
+    producto_id: Optional[str] = None
+    nombre_detectado: Optional[str] = None
+    nombre_catalogo: Optional[str] = None
+    cantidad: Optional[int] = None
     confianza: str
-    advertencia: Optional[str]
+    advertencia: Optional[str] = None
 
 class RespuestaGemini(BaseModel):
     productos: list[ProductoGemini]
-    error_general: Optional[str]
+    error_general: Optional[str] = None
