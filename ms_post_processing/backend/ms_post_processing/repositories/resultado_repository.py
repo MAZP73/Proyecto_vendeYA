@@ -1,3 +1,6 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from database import supabase
 from schemas.process_response import ProcessResponse
 from exceptions import GuardadoSupabaseError
@@ -37,6 +40,9 @@ class ResultadoRepository:
                 "iva_total": result.factura.iva_total,
                 "total": result.factura.total,
                 "estado": result.factura.estado,
+                "created_at": datetime.now(
+                    ZoneInfo("America/Bogota")
+                ).isoformat(),
             }).execute()
         except Exception as e:
             logger.error(f"[RESULTADO_REPO] Error en facturas | sesion_id={sesion_id}: {e}")

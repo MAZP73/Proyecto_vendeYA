@@ -105,7 +105,7 @@ class NegocioService:
                 subtotal=subtotal_total,
                 iva_total=iva_total,
                 total=total,
-                estado="pagada",
+                estado="pendiente",
             ),
         )
 
