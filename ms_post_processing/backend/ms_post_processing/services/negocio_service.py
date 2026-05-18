@@ -6,8 +6,8 @@ from repositories.catalog_repository import CatalogRepository
 from repositories.resultado_repository import ResultadoRepository
 from services.pricing_service import PricingService
 from services.iva_service import IvaService
-from exceptions import ProductoNoEncontradoError, ProductosInsuficientesError
-from logger import get_logger
+from core.exceptions import ProductoNoEncontradoError, ProductosInsuficientesError
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 
