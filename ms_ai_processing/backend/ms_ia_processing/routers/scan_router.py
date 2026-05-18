@@ -1,12 +1,13 @@
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from schemas.scan_schema import RespuestaGemini
-from schemas.scan_response import ScanResponse
 from services.vision_service import procesar_imagen
 from core.exceptions import (
     ImagenInvalidaError,
     GeminiResponseError,
-    ProductosNoDetectadosError
+    ProductosNoDetectadosError,
+    SinProductosError,
+    CalidadInsuficienteError
 )
 from core.logger import get_logger
 import httpx
@@ -19,7 +20,7 @@ security = HTTPBearer()
 FORMATOS_PERMITIDOS = {"image/jpeg", "image/png", "image/webp"}
 
 
-@router.post("/", response_model=ScanResponse)
+@router.post("/", response_model=RespuestaGemini)
 async def scan(
     file: UploadFile = File(...),
     sesion_id: str = Form(...),
@@ -33,7 +34,10 @@ async def scan(
         logger.warning(f"Formato no permitido: {file.content_type}")
         raise HTTPException(
             status_code=415,
-            detail=f"Formato no soportado: {file.content_type}. Use JPEG, PNG o WebP."
+            detail={
+                "tipo": "FORMATO_NO_SOPORTADO",
+                "mensaje": f"Formato no soportado: {file.content_type}. Use JPEG, PNG o WebP."
+            }
         )
 
     # Leer y validar tamaño
@@ -45,7 +49,10 @@ async def scan(
         logger.warning(f"Imagen supera tamaño máximo: {tamanio_mb:.2f}MB")
         raise HTTPException(
             status_code=413,
-            detail="La imagen supera el tamaño máximo permitido de 10MB."
+            detail={
+                "tipo": "IMAGEN_MUY_GRANDE",
+                "mensaje": "La imagen supera el tamaño máximo permitido de 10MB."
+            }
         )
 
     try:
@@ -55,14 +62,6 @@ async def scan(
             imagen_bytes=contenido,
             content_type=file.content_type
         )
-
-        # Si Gemini reportó error general retornarlo limpiamente
-        if respuesta_gemini.error_general:
-            logger.warning(f"Gemini reportó error general: {respuesta_gemini.error_general}")
-            raise HTTPException(
-                status_code=422,
-                detail=respuesta_gemini.error_general
-            )
 
         # Log resumen de productos detectados
         total  = len(respuesta_gemini.productos)
@@ -74,13 +73,11 @@ async def scan(
             f"alta: {altas} | media: {medias} | baja: {bajas}"
         )
 
-
         # Reenviar a ms_post_processing con sesion_id y JWT
         logger.info(f"Reenviando resultado a ms_post_processing | sesion_id: {sesion_id}")
-
         async with httpx.AsyncClient() as client:
             respuesta_post = await client.post(
-                "http://ms_post_processing:8000/api/v1/procesar",
+                f"{settings.ms_post_processing_url}/api/v1/procesar",
                 json={
                     **respuesta_gemini.model_dump(),
                     "sesion_id": sesion_id
@@ -93,17 +90,69 @@ async def scan(
         logger.info(f"Respuesta de ms_post_processing recibida | sesion_id: {sesion_id}")
         return respuesta_post.json()
 
+    except SinProductosError as e:
+        logger.warning(
+            f"Sin productos detectados | sesion_id: {sesion_id} | "
+            f"detalle: {e.detalle}"
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "tipo": "SIN_PRODUCTOS",
+                "mensaje": e.mensaje,
+                "detalle": e.detalle
+            }
+        )
+
+    except CalidadInsuficienteError as e:
+        logger.warning(
+            f"Calidad insuficiente | sesion_id: {sesion_id} | "
+            f"resumen: {e.resumen}"
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "tipo": "CALIDAD_INSUFICIENTE",
+                "mensaje": e.mensaje,
+                "resumen": e.resumen
+            }
+        )
+
     except ImagenInvalidaError as e:
         logger.error(f"Imagen inválida | sesion_id: {sesion_id} | detalle: {e.mensaje}")
-        raise HTTPException(status_code=400, detail=e.mensaje)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "tipo": "IMAGEN_INVALIDA",
+                "mensaje": e.mensaje
+            }
+        )
 
     except GeminiResponseError as e:
-        logger.error(f"Error en respuesta de Gemini | sesion_id: {sesion_id} | detalle: {e.mensaje}")
-        raise HTTPException(status_code=502, detail=e.mensaje)
+        logger.error(
+            f"Error en respuesta de Gemini | sesion_id: {sesion_id} | "
+            f"detalle: {e.mensaje}"
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "tipo": "ERROR_GEMINI",
+                "mensaje": e.mensaje
+            }
+        )
 
     except ProductosNoDetectadosError as e:
-        logger.warning(f"Sin productos detectados | sesion_id: {sesion_id} | detalle: {e.mensaje}")
-        raise HTTPException(status_code=422, detail=e.mensaje)
+        logger.warning(
+            f"Sin productos detectados | sesion_id: {sesion_id} | "
+            f"detalle: {e.mensaje}"
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "tipo": "SIN_PRODUCTOS",
+                "mensaje": e.mensaje
+            }
+        )
 
     except httpx.HTTPStatusError as e:
         logger.error(
@@ -112,22 +161,34 @@ async def scan(
         )
         raise HTTPException(
             status_code=502,
-            detail=f"Error comunicándose con ms_post_processing: {e.response.status_code}"
+            detail={
+                "tipo": "ERROR_POST_PROCESSING",
+                "mensaje": f"Error comunicándose con ms_post_processing: {e.response.status_code}"
+            }
         )
 
     except httpx.TimeoutException:
         logger.error(f"Timeout esperando ms_post_processing | sesion_id: {sesion_id}")
         raise HTTPException(
             status_code=504,
-            detail="ms_post_processing no respondió a tiempo."
+            detail={
+                "tipo": "TIMEOUT_POST_PROCESSING",
+                "mensaje": "ms_post_processing no respondió a tiempo."
+            }
         )
 
     except HTTPException:
         raise
 
     except Exception as e:
-        logger.error(f"Error inesperado | sesion_id: {sesion_id} | detalle: {e}", exc_info=True)
+        logger.error(
+            f"Error inesperado | sesion_id: {sesion_id} | detalle: {e}",
+            exc_info=True
+        )
         raise HTTPException(
             status_code=500,
-            detail="Error interno del servidor."
+            detail={
+                "tipo": "ERROR_INTERNO",
+                "mensaje": "Error interno del servidor."
+            }
         )

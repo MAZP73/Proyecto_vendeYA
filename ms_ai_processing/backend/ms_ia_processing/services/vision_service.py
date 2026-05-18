@@ -3,7 +3,9 @@ from schemas.scan_schema import RespuestaGemini, ProductoGemini
 from core.exceptions import (
     ImagenInvalidaError,
     GeminiResponseError,
-    ProductosNoDetectadosError
+    ProductosNoDetectadosError,
+    SinProductosError,
+    CalidadInsuficienteError
 )
 from core.logger import get_logger
 from database.client_supabase import obtener_inventario
@@ -11,6 +13,9 @@ from PIL import Image
 import io
 
 logger = get_logger(__name__)
+
+UMBRAL_BAJA = 80        # % de productos con confianza baja para cortar el flujo
+UMBRAL_MINIMO_ALTAS = 1 # mínimo de productos con confianza alta para continuar
 
 
 async def procesar_imagen(
@@ -40,7 +45,7 @@ async def procesar_imagen(
         inventario=inventario
     )
 
-    # Validar resultado
+    # Validar resultado y aplicar reglas de calidad
     respuesta = _validar_respuesta_gemini(resultado_gemini)
 
     return respuesta
@@ -49,7 +54,6 @@ async def procesar_imagen(
 def _validar_imagen(imagen_bytes: bytes) -> None:
     logger.debug("Validando imagen")
 
-    # Validar que los bytes corresponden a una imagen real
     try:
         imagen = Image.open(io.BytesIO(imagen_bytes))
         imagen.verify()
@@ -57,7 +61,6 @@ def _validar_imagen(imagen_bytes: bytes) -> None:
         logger.error("Los bytes recibidos no corresponden a una imagen válida")
         raise ImagenInvalidaError("El archivo recibido no es una imagen válida")
 
-    # Validar dimensiones mínimas
     imagen = Image.open(io.BytesIO(imagen_bytes))
     ancho, alto = imagen.size
 
@@ -71,25 +74,94 @@ def _validar_imagen(imagen_bytes: bytes) -> None:
     logger.debug(f"Imagen válida: {ancho}x{alto}px")
 
 
+def _calcular_resumen(productos: list[ProductoGemini]) -> dict:
+    total  = len(productos)
+    altas  = sum(1 for p in productos if p.confianza == "alta")
+    medias = sum(1 for p in productos if p.confianza == "media")
+    bajas  = sum(1 for p in productos if p.confianza == "baja")
+
+    pct_alta  = round(altas  / total * 100, 1) if total > 0 else 0
+    pct_media = round(medias / total * 100, 1) if total > 0 else 0
+    pct_baja  = round(bajas  / total * 100, 1) if total > 0 else 0
+
+    return {
+        "total"    : total,
+        "alta"     : altas,
+        "media"    : medias,
+        "baja"     : bajas,
+        "pct_alta" : pct_alta,
+        "pct_media": pct_media,
+        "pct_baja" : pct_baja
+    }
+
+
+def _validar_calidad_deteccion(productos: list[ProductoGemini]) -> None:
+    resumen = _calcular_resumen(productos)
+
+    logger.debug(
+        f"Calidad de detección | "
+        f"alta: {resumen['alta']} ({resumen['pct_alta']}%) | "
+        f"media: {resumen['media']} ({resumen['pct_media']}%) | "
+        f"baja: {resumen['baja']} ({resumen['pct_baja']}%)"
+    )
+
+    # Cortar si no hay ningún producto con confianza alta
+    if resumen["alta"] < UMBRAL_MINIMO_ALTAS:
+        logger.warning(
+            f"Ningún producto con confianza alta detectado | "
+            f"total: {resumen['total']} | baja: {resumen['baja']}"
+        )
+        raise CalidadInsuficienteError(
+            mensaje=(
+                "No se identificó ningún producto con certeza. "
+                "Intente con mejor iluminación, acérquese más a los productos "
+                "o evite que se tapen entre sí."
+            ),
+            resumen=resumen
+        )
+
+    # Cortar si el porcentaje de confianza baja supera el umbral
+    if resumen["pct_baja"] >= UMBRAL_BAJA:
+        logger.warning(
+            f"Porcentaje de confianza baja supera umbral | "
+            f"pct_baja: {resumen['pct_baja']}% | umbral: {UMBRAL_BAJA}%"
+        )
+        raise CalidadInsuficienteError(
+            mensaje=(
+                f"El {resumen['pct_baja']}% de los productos no pudieron identificarse "
+                f"con certeza. Intente con mejor iluminación, acérquese más a los "
+                f"productos o evite que se tapen entre sí."
+            ),
+            resumen=resumen
+        )
+
+    logger.info(
+        f"Calidad de detección aceptable | "
+        f"alta: {resumen['alta']} ({resumen['pct_alta']}%) | "
+        f"baja: {resumen['baja']} ({resumen['pct_baja']}%)"
+    )
+
+
 def _validar_respuesta_gemini(resultado: dict) -> RespuestaGemini:
     logger.debug("Validando estructura de respuesta de Gemini")
 
-    # Si Gemini reportó error general
+    # Caso 1 — Gemini reportó error general (imagen sin productos, oscura, borrosa)
     if resultado.get("error_general"):
         logger.warning(f"Gemini reportó error general: {resultado['error_general']}")
-        return RespuestaGemini(
-            productos=[],
-            error_general=resultado["error_general"]
+        raise SinProductosError(
+            mensaje="No se detectaron productos en la imagen.",
+            detalle=resultado["error_general"]
         )
 
     productos_raw = resultado.get("productos", [])
 
-    # Si no detectó ningún producto
+    # Caso 2 — Array vacío sin error_general (caso inesperado)
     if not productos_raw:
-        logger.warning("Gemini no detectó ningún producto en la imagen")
-        raise ProductosNoDetectadosError(
-            "No se detectaron productos en la imagen. "
-            "Intente con mejor iluminación o acercándose más a los productos."
+        logger.warning("Gemini retornó array de productos vacío sin error_general")
+        raise SinProductosError(
+            mensaje="No se detectaron productos en la imagen.",
+            detalle="El modelo no identificó ningún producto ni reportó el motivo. "
+                    "Intente tomar la foto más cerca de los productos."
         )
 
     # Mapear cada producto al schema
@@ -97,32 +169,33 @@ def _validar_respuesta_gemini(resultado: dict) -> RespuestaGemini:
     for p in productos_raw:
         try:
             producto = ProductoGemini(
-                producto_id=p.get("producto_id"),
+                producto_id    =p.get("producto_id"),
                 nombre_detectado=p.get("nombre_detectado"),
-                nombre_catalogo=p.get("nombre_catalogo"),
-                cantidad=p.get("cantidad"),
-                confianza=p.get("confianza"),
-                advertencia=p.get("advertencia")
+                nombre_catalogo =p.get("nombre_catalogo"),
+                cantidad       =p.get("cantidad"),
+                confianza      =p.get("confianza"),
+                advertencia    =p.get("advertencia")
             )
             productos.append(producto)
         except Exception as e:
             logger.warning(f"Producto con estructura inválida ignorado: {e}")
             continue
 
-    # Si todos los productos fallaron la validación
+    # Caso 3 — Todos los productos fallaron la validación de estructura
     if not productos:
         logger.error("Ningún producto pasó la validación de estructura")
         raise GeminiResponseError(
             "La respuesta de Gemini no contiene productos con estructura válida"
         )
 
-    # Log resumen
-    altas  = sum(1 for p in productos if p.confianza == "alta")
-    medias = sum(1 for p in productos if p.confianza == "media")
-    bajas  = sum(1 for p in productos if p.confianza == "baja")
+    # Caso 4 — Validar calidad de detección
+    _validar_calidad_deteccion(productos)
+
+    # Todo bien
+    resumen = _calcular_resumen(productos)
     logger.info(
-        f"Validación exitosa | total: {len(productos)} | "
-        f"alta: {altas} | media: {medias} | baja: {bajas}"
+        f"Validación exitosa | total: {resumen['total']} | "
+        f"alta: {resumen['alta']} | media: {resumen['media']} | baja: {resumen['baja']}"
     )
 
     return RespuestaGemini(

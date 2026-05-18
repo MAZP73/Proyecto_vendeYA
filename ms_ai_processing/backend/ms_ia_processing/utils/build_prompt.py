@@ -35,8 +35,16 @@ REGLAS DE ADVERTENCIA:
      cualquier texto parcialmente visible.
 
 CASOS DE EXCEPCIÓN:
-- Si la imagen está completamente oscura, borrosa o no muestra productos: 
-  retorna el JSON con "productos" como array vacío y agrega el problema en error_general.
+- Si la imagen no muestra productos comerciales (pared, mesa vacía, suelo, personas, 
+  objetos no comerciales) o está oscura o borrosa: retorna "productos" como array vacío 
+  y en "error_general" describe detalladamente qué fue lo que sí viste, incluyendo:
+  1. Qué tipo de superficie o entorno detectaste (pared, suelo, mesa, exterior, etc).
+  2. Colores y texturas predominantes.
+  3. Condiciones de luz (muy oscuro, sobreexpuesto, borroso).
+  4. Cualquier objeto no comercial visible (manos, ropa, muebles, etc).
+  Ejemplo: "No se detectaron productos. La imagen muestra una superficie de color 
+  blanco liso, posiblemente una pared o techo. Iluminación adecuada pero sin objetos 
+  comerciales visibles."
 - Si hay productos pero ninguno coincide con el inventario: retorna todos 
   con confianza "baja" y sus respectivas advertencias.
 - Si un producto tiene cantidad cero o no puedes determinar la cantidad: 
@@ -44,8 +52,8 @@ CASOS DE EXCEPCIÓN:
 - Si hay productos muy amontonados y no puedes contarlos con certeza: 
   reporta la cantidad mínima confirmable y menciona en advertencia que puede 
   haber más unidades detrás.
-- Todos los productos que no esten dentro del catalogo, no los agregues a la respuesta, ignora esas detecciones, no las reportes como confianza baja, simplemente ignoralas.
 """
+
 
 RESPONSE_SCHEMA = {
     "type": "object",
@@ -57,18 +65,22 @@ RESPONSE_SCHEMA = {
                 "properties": {
                     "producto_id": {
                         "type": "string",
+                        "nullable": True,
                         "description": "ID exacto del producto en el inventario. null si confianza es baja."
                     },
                     "nombre_detectado": {
                         "type": "string",
+                        "nullable": True,
                         "description": "Nombre tal como se lee en el empaque. null si confianza es baja."
                     },
                     "nombre_catalogo": {
                         "type": "string",
+                        "nullable": True,
                         "description": "Nombre exacto del producto en el inventario. null si confianza es baja."
                     },
                     "cantidad": {
                         "type": "integer",
+                        "nullable": True,
                         "description": "Unidades visibles en la imagen. Mínimo 1 si el producto es visible."
                     },
                     "confianza": {
@@ -78,6 +90,7 @@ RESPONSE_SCHEMA = {
                     },
                     "advertencia": {
                         "type": "string",
+                        "nullable": True,
                         "description": "Descripción detallada del problema. null si confianza es alta."
                     }
                 },
@@ -93,12 +106,14 @@ RESPONSE_SCHEMA = {
         },
         "error_general": {
             "type": "string",
-            "description": "Error si la imagen completa no pudo procesarse. null en condiciones normales."
+            "nullable": True,
+            "description": """Null en condiciones normales. Si la imagen no tiene productos,
+            describe detalladamente qué viste: tipo de superficie, colores, 
+            condiciones de luz y objetos no comerciales visibles."""
         }
     },
     "required": ["productos", "error_general"]
 }
-
 
 FEW_SHOT_EXAMPLES = """
 EJEMPLO 1 - Producto identificado con certeza (confianza alta):
@@ -125,10 +140,7 @@ EJEMPLO 2 - Producto con dudas en el mapeo (confianza media):
       "nombre_catalogo": "Arroz Diana 500g",
       "cantidad": 1,
       "confianza": "media",
-      "advertencia": "El empaque está parcialmente tapado en la zona central izquierda 
-        de la imagen. Se alcanza a leer 'Arroz Diana' pero no la presentación. 
-        Empaque de color rojo con letras blancas. Puede corresponder a Arroz Diana 
-        500g o Arroz Diana 1kg del inventario. Verificar con el cliente."
+      "advertencia": "El empaque está parcialmente tapado en la zona central izquierda de la imagen. Se alcanza a leer 'Arroz Diana' pero no la presentación. Empaque de color rojo con letras blancas. Puede corresponder a Arroz Diana 500g o Arroz Diana 1kg del inventario. Verificar con el cliente."
     }
   ],
   "error_general": null
@@ -143,19 +155,22 @@ EJEMPLO 3 - Producto no identificado (confianza baja):
       "nombre_catalogo": null,
       "cantidad": null,
       "confianza": "baja",
-      "advertencia": "Producto no identificado en la esquina inferior derecha de la imagen. 
-        Empaque de color azul con franja amarilla, forma cilíndrica, tamaño pequeño 
-        aproximadamente 200ml. No fue posible leer ningún texto del empaque."
+      "advertencia": "Producto no identificado en la esquina inferior derecha de la imagen. Empaque de color azul con franja amarilla, forma cilíndrica, tamaño pequeño aproximadamente 200ml. No fue posible leer ningún texto del empaque."
     }
   ],
   "error_general": null
 }
 
-EJEMPLO 4 - Imagen no procesable:
+EJEMPLO 4 - Imagen sin productos (pared, mesa vacía, entorno no comercial):
 {
   "productos": [],
-  "error_general": "La imagen está demasiado oscura para identificar productos. 
-    Solicite al cajero tomar una nueva foto con mejor iluminación."
+  "error_general": "No se detectaron productos. La imagen muestra una superficie de color blanco liso, posiblemente una pared o techo. Iluminación adecuada pero sin objetos comerciales visibles."
+}
+
+EJEMPLO 5 - Imagen con problemas de calidad:
+{
+  "productos": [],
+  "error_general": "No se detectaron productos. La imagen está muy oscura y borrosa. Se distingue un entorno interior con luz artificial tenue. No es posible identificar ningún objeto con certeza."
 }
 """
 

@@ -53,6 +53,7 @@ async def procesar_imagen_con_gemini(
         logger.debug(f"Enviando imagen de {len(imagen_bytes) / 1024:.1f}KB a Gemini")
         logger.debug(f"Inventario enviado: {len(inventario)} productos")
 
+        logger.info(f"Procesando respuesta con modelo de IA gemini-2.5-flash...")
         respuesta = model.generate_content(contenido)
 
         logger.debug(f"Respuesta cruda de Gemini: {respuesta.text}")
