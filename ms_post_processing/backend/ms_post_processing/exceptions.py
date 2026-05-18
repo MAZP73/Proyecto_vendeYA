@@ -18,5 +18,9 @@ class EnvioDestinoError(Exception):
     pass
 
 
+class GuardadoSupabaseError(Exception):
+    pass
+
+
 class StockInsuficienteError(Exception):
     pass

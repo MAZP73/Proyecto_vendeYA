@@ -3,6 +3,7 @@ from datetime import datetime
 from schemas.process_request import ProcessRequest
 from schemas.process_response import FacturaSalida, ProcessResponse, ProductoSalida
 from repositories.catalog_repository import CatalogRepository
+from repositories.resultado_repository import ResultadoRepository
 from services.pricing_service import PricingService
 from services.iva_service import IvaService
 from exceptions import ProductoNoEncontradoError, ProductosInsuficientesError
@@ -95,7 +96,7 @@ class NegocioService:
             f"| subtotal={subtotal_total} | iva={iva_total} | total={total}"
         )
 
-        return ProcessResponse(
+        response = ProcessResponse(
             sesion_id=request.sesion_id,
             estado="completada",
             productos=productos_salida,
@@ -107,3 +108,8 @@ class NegocioService:
                 estado="pagada",
             ),
         )
+
+        resultado_repo = ResultadoRepository()
+        await resultado_repo.guardar_resultado(response)
+
+        return response
