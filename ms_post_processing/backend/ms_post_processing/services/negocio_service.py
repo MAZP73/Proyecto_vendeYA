@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from schemas.process_request import ProcessRequest
 from schemas.process_response import FacturaSalida, ProcessResponse, ProductoSalida
 from repositories.catalog_repository import CatalogRepository
@@ -10,8 +8,6 @@ from core.exceptions import ProductoNoEncontradoError, ProductosInsuficientesErr
 from core.logger import get_logger
 
 logger = get_logger(__name__)
-
-_factura_counter = 0
 
 
 class NegocioService:
@@ -87,9 +83,8 @@ class NegocioService:
         iva_total = round(sum(p.iva for p in productos_salida), 2)
         total = round(subtotal_total + iva_total, 2)
 
-        global _factura_counter
-        _factura_counter += 1
-        numero_factura = f"FAC-{datetime.now().year}-{_factura_counter:04d}"
+        resultado_repo = ResultadoRepository()
+        numero_factura = await resultado_repo.obtener_ultimo_numero_factura()
 
         logger.info(
             f"[NEGOCIO] Factura | numero={numero_factura} "
@@ -109,7 +104,6 @@ class NegocioService:
             ),
         )
 
-        resultado_repo = ResultadoRepository()
         await resultado_repo.guardar_resultado(response)
 
         return response
