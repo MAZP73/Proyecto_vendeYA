@@ -1,7 +1,10 @@
-from database import supabase
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from database.client_supabase import get_supabase
 from schemas.process_response import ProcessResponse
-from exceptions import GuardadoSupabaseError
-from logger import get_logger
+from core.exceptions import GuardadoSupabaseError
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -13,7 +16,7 @@ class ResultadoRepository:
 
         for p in result.productos:
             try:
-                supabase.table("sesion_productos").insert({
+                get_supabase().table("sesion_productos").insert({
                     "sesion_id": sesion_id,
                     "producto_id": p.producto_id,
                     "nombre_detectado": p.nombre_detectado,
@@ -30,13 +33,16 @@ class ResultadoRepository:
                 raise GuardadoSupabaseError(f"Error guardando sesion_productos: {e}")
 
         try:
-            resp = supabase.table("facturas").insert({
+            resp = get_supabase().table("facturas").insert({
                 "sesion_id": sesion_id,
                 "numero_factura": result.factura.numero_factura,
                 "subtotal": result.factura.subtotal,
                 "iva_total": result.factura.iva_total,
                 "total": result.factura.total,
                 "estado": result.factura.estado,
+                "created_at": datetime.now(
+                    ZoneInfo("America/Bogota")
+                ).isoformat(),
             }).execute()
         except Exception as e:
             logger.error(f"[RESULTADO_REPO] Error en facturas | sesion_id={sesion_id}: {e}")
@@ -46,7 +52,7 @@ class ResultadoRepository:
 
         for p in result.productos:
             try:
-                supabase.table("factura_detalle").insert({
+                get_supabase().table("factura_detalle").insert({
                     "factura_id": factura_id,
                     "producto_id": p.producto_id,
                     "cantidad": p.cantidad,

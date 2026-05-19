@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends
 from schemas.process_request import ProcessRequest
 from schemas.process_response import ProcessResponse
 from services.negocio_service import NegocioService
-from auth import verificar_token
-from logger import get_logger
+from core.auth import verificar_token
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()

@@ -1,6 +1,6 @@
-from database import supabase
-from exceptions import ProductoNoEncontradoError, SesionNoEncontradaError
-from logger import get_logger
+from database.client_supabase import get_supabase
+from core.exceptions import ProductoNoEncontradoError, SesionNoEncontradaError
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -11,7 +11,7 @@ class CatalogRepository:
         logger.debug(f"[REPO] Validando sesion_id={sesion_id}")
         try:
             resp = (
-                supabase.table("sesiones")
+                get_supabase().table("sesiones")
                 .select("id, estado")
                 .eq("id", sesion_id)
                 .single()
@@ -41,7 +41,7 @@ class CatalogRepository:
         logger.debug(f"[REPO] Consultando producto_id={producto_id}")
         try:
             resp = (
-                supabase.table("productos_catalogo")
+                get_supabase().table("productos_catalogo")
                 .select("id, nombre, sku, precio_unitario, iva, activo")
                 .eq("id", producto_id)
                 .single()
@@ -69,7 +69,7 @@ class CatalogRepository:
         logger.debug(f"[REPO] Consultando stock | producto_id={producto_id}")
         try:
             resp = (
-                supabase.table("inventario")
+                get_supabase().table("inventario")
                 .select("stock_actual")
                 .eq("producto_id", producto_id)
                 .single()

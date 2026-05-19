@@ -14,10 +14,6 @@ class ProductosInsuficientesError(Exception):
     pass
 
 
-class EnvioDestinoError(Exception):
-    pass
-
-
 class GuardadoSupabaseError(Exception):
     pass
 
